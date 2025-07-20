@@ -109,10 +109,3 @@ Personal Finance Tracker/
 3. View analytics and charts on the dashboard.
 4. Manage your transactions and categories.
 
-## Contributing
-
-Contributions are welcome! Please open issues or submit pull requests for improvements and bug fixes.
-
-## License
-
-[MIT](LICENSE)
