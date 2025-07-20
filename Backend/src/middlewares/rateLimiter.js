@@ -75,3 +75,9 @@ export const analyticsLimiter = rateLimit({
     });
   },
 });
+
+export const rateLimiter = {
+  authLimiter,
+  transactionLimiter,
+  analyticsLimiter,
+};
