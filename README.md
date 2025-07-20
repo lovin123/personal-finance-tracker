@@ -2,6 +2,16 @@
 
 A full-stack web application to help users manage their personal finances, track transactions, analyze spending, and visualize financial data.
 
+## Default Credentials for All Roles
+
+After seeding the database, you can use the following credentials to log in as different roles:
+
+| Role      | Email                | Password     |
+| --------- | -------------------- | ------------ |
+| Admin     | admin@example.com    | Admin123!    |
+| User      | user@example.com     | User123!     |
+| Read-only | readonly@example.com | ReadOnly123! |
+
 ## Features
 
 - User authentication (register, login)
@@ -83,16 +93,6 @@ npm run dev
 
 - Frontend: [http://localhost:3000](http://localhost:3000)
 - Backend: [http://localhost:5000](http://localhost:5000) (or as configured)
-
-## Default Credentials for All Roles
-
-After seeding the database, you can use the following credentials to log in as different roles:
-
-| Role      | Email                | Password     |
-| --------- | -------------------- | ------------ |
-| Admin     | admin@example.com    | Admin123!    |
-| User      | user@example.com     | User123!     |
-| Read-only | readonly@example.com | ReadOnly123! |
 
 ## Folder Structure
 
