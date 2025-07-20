@@ -1,40 +1,62 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { apiService } from "@/lib/api-service"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Badge } from "@/components/ui/badge"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts"
-import { Loader2 } from "lucide-react"
+import { useEffect, useState } from "react";
+import { apiService } from "@/lib/api-service";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+} from "recharts";
+import { Loader2 } from "lucide-react";
 
 interface MonthlyData {
-  month: string
-  income: number
-  expense: number
-  net: number
+  month: string;
+  income: number;
+  expense: number;
+  net: number;
 }
 
 export function OverviewChart() {
-  const [data, setData] = useState<MonthlyData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [cached, setCached] = useState(false)
+  const [data, setData] = useState<MonthlyData[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await apiService.getAnalyticsMonthly()
-        setData(response.data.monthlyData)
-        setCached(response.cached || false)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setFullYear(endDate.getFullYear() - 3);
+        const startDateStr = startDate.toISOString().slice(0, 10);
+        const endDateStr = endDate.toISOString().slice(0, 10);
+        const response = await apiService.getAnalyticsMonthly(
+          startDateStr,
+          endDateStr
+        );
+        setData(response.data.data.monthlyData);
       } catch (error) {
-        console.error("Failed to fetch monthly data:", error)
+        console.error("Failed to fetch monthly data:", error);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchData()
-  }, [])
+    fetchData();
+  }, []);
 
   const chartConfig = {
     income: {
@@ -49,7 +71,7 @@ export function OverviewChart() {
       label: "Net",
       color: "hsl(var(--chart-3))",
     },
-  }
+  };
 
   return (
     <Card>
@@ -58,7 +80,6 @@ export function OverviewChart() {
           <CardTitle>Monthly Overview</CardTitle>
           <CardDescription>Income vs Expenses over time</CardDescription>
         </div>
-        {cached && <Badge variant="secondary">Cached</Badge>}
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -66,15 +87,21 @@ export function OverviewChart() {
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
         ) : (
-          <ChartContainer config={chartConfig} className="h-[300px]">
+          <ChartContainer
+            config={chartConfig}
+            className="h-[300px] overflow-x-auto"
+          >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="month"
                   tickFormatter={(value) => {
-                    const date = new Date(value + "-01")
-                    return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+                    const date = new Date(value + "-01");
+                    return date.toLocaleDateString("en-US", {
+                      month: "short",
+                      year: "2-digit",
+                    });
                   }}
                 />
                 <YAxis />
@@ -85,6 +112,7 @@ export function OverviewChart() {
                   stroke="var(--color-income)"
                   strokeWidth={2}
                   dot={{ fill: "var(--color-income)" }}
+                  name="Income"
                 />
                 <Line
                   type="monotone"
@@ -92,6 +120,7 @@ export function OverviewChart() {
                   stroke="var(--color-expense)"
                   strokeWidth={2}
                   dot={{ fill: "var(--color-expense)" }}
+                  name="Expense"
                 />
                 <Line
                   type="monotone"
@@ -99,6 +128,7 @@ export function OverviewChart() {
                   stroke="var(--color-net)"
                   strokeWidth={2}
                   dot={{ fill: "var(--color-net)" }}
+                  name="Net"
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -106,5 +136,5 @@ export function OverviewChart() {
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

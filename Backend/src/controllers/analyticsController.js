@@ -17,24 +17,50 @@ export async function getMonthlyAnalytics(req, res) {
         .status(200)
         .json({ success: true, data: cachedData, cached: true });
     }
-    const monthlyData = await prisma.$queryRaw`
-      SELECT 
-        DATE_TRUNC('month', date) as month,
-        SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END) as income,
-        SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) as expense
-      FROM transactions 
-      WHERE userId = ${userId} 
-        AND date >= ${start} 
-        AND date <= ${end}
-      GROUP BY DATE_TRUNC('month', date)
-      ORDER BY month ASC
-    `;
-    const formattedData = monthlyData.map((item) => ({
-      month: moment(item.month).format("YYYY-MM"),
-      income: parseFloat(item.income || 0),
-      expense: parseFloat(item.expense || 0),
-      net: parseFloat(item.income || 0) - parseFloat(item.expense || 0),
-    }));
+    // Use Prisma groupBy for monthly analytics
+    const monthlyData = await prisma.transaction.groupBy({
+      by: ["date"],
+      where: {
+        userId,
+        date: { gte: start, lte: end },
+      },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        id: true,
+      },
+    });
+    // Group by month and sum income/expense
+    const monthMap = {};
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId,
+        date: { gte: start, lte: end },
+      },
+      select: {
+        date: true,
+        type: true,
+        amount: true,
+      },
+    });
+    transactions.forEach((txn) => {
+      const month = moment(txn.date).format("YYYY-MM");
+      if (!monthMap[month]) {
+        monthMap[month] = { month, income: 0, expense: 0 };
+      }
+      if (txn.type === "INCOME") {
+        monthMap[month].income += Number(txn.amount);
+      } else if (txn.type === "EXPENSE") {
+        monthMap[month].expense += Number(txn.amount);
+      }
+    });
+    const formattedData = Object.values(monthMap)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map((item) => ({
+        ...item,
+        net: item.income - item.expense,
+      }));
     const result = {
       monthlyData: formattedData,
       period: { start: start.toISOString(), end: end.toISOString() },
@@ -47,12 +73,10 @@ export async function getMonthlyAnalytics(req, res) {
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("Monthly analytics error:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to retrieve monthly analytics",
-        message: "An error occurred while retrieving monthly analytics",
-      });
+    res.status(500).json({
+      error: "Failed to retrieve monthly analytics",
+      message: "An error occurred while retrieving monthly analytics",
+    });
   }
 }
 
@@ -71,38 +95,50 @@ export async function getCategoryAnalytics(req, res) {
         .status(200)
         .json({ success: true, data: cachedData, cached: true });
     }
-    const categoryData = await prisma.$queryRaw`
-      SELECT 
-        category,
-        SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END) as income,
-        SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) as expense
-      FROM transactions 
-      WHERE userId = ${userId} 
-        AND date >= ${start} 
-        AND date <= ${end}
-      GROUP BY category
-      ORDER BY (SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END)) DESC
-    `;
-    const totalExpenses = categoryData.reduce(
-      (sum, item) => sum + parseFloat(item.expense || 0),
+    // Get all transactions in range
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId,
+        date: { gte: start, lte: end },
+      },
+      select: {
+        category: true,
+        type: true,
+        amount: true,
+      },
+    });
+    // Aggregate by category
+    const categoryMap = {};
+    transactions.forEach((txn) => {
+      if (!categoryMap[txn.category]) {
+        categoryMap[txn.category] = {
+          category: txn.category,
+          income: 0,
+          expense: 0,
+        };
+      }
+      if (txn.type === "INCOME") {
+        categoryMap[txn.category].income += Number(txn.amount);
+      } else if (txn.type === "EXPENSE") {
+        categoryMap[txn.category].expense += Number(txn.amount);
+      }
+    });
+    const totalExpense = Object.values(categoryMap).reduce(
+      (sum, cat) => sum + cat.expense,
       0
     );
-    const formattedData = categoryData.map((item) => {
-      const income = parseFloat(item.income || 0);
-      const expense = parseFloat(item.expense || 0);
-      const total = income - expense;
+    const formattedData = Object.values(categoryMap).map((cat) => {
+      const total = cat.income - cat.expense;
       const percentage =
-        totalExpenses > 0 ? (expense / totalExpenses) * 100 : 0;
+        totalExpense > 0 ? (cat.expense / totalExpense) * 100 : 0;
       return {
-        category: item.category,
-        income,
-        expense,
+        ...cat,
         total,
         percentage: Math.round(percentage * 100) / 100,
       };
     });
     const result = {
-      categories: formattedData,
+      categories: formattedData.sort((a, b) => b.expense - a.expense),
       period: { start: start.toISOString(), end: end.toISOString() },
       summary: {
         totalIncome: formattedData.reduce((sum, item) => sum + item.income, 0),
@@ -121,12 +157,10 @@ export async function getCategoryAnalytics(req, res) {
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("Category analytics error:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to retrieve category analytics",
-        message: "An error occurred while retrieving category analytics",
-      });
+    res.status(500).json({
+      error: "Failed to retrieve category analytics",
+      message: "An error occurred while retrieving category analytics",
+    });
   }
 }
 
@@ -145,72 +179,58 @@ export async function getOverviewAnalytics(req, res) {
         .status(200)
         .json({ success: true, data: cachedData, cached: true });
     }
-    const [summaryData, recentTransactions] = await Promise.all([
-      prisma.$queryRaw`
-        SELECT 
-          SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END) as totalIncome,
-          SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) as totalExpense,
-          COUNT(*) as totalTransactions
-        FROM transactions 
-        WHERE userId = ${userId} 
-          AND date >= ${start} 
-          AND date <= ${end}
-      `,
-      prisma.transaction.findMany({
-        where: { userId, date: { gte: start, lte: end } },
-        orderBy: { date: "desc" },
-        take: 10,
-        select: {
-          id: true,
-          title: true,
-          amount: true,
-          type: true,
-          category: true,
-          date: true,
-        },
-      }),
-    ]);
-    const totalIncome = parseFloat(summaryData[0]?.totalIncome || 0);
-    const totalExpense = parseFloat(summaryData[0]?.totalExpense || 0);
+    // Get all transactions in range
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        userId,
+        date: { gte: start, lte: end },
+      },
+      select: {
+        id: true,
+        title: true,
+        amount: true,
+        type: true,
+        category: true,
+        date: true,
+      },
+      orderBy: { date: "desc" },
+    });
+    // Calculate summary
+    let totalIncome = 0,
+      totalExpense = 0;
+    transactions.forEach((txn) => {
+      if (txn.type === "INCOME") totalIncome += Number(txn.amount);
+      else if (txn.type === "EXPENSE") totalExpense += Number(txn.amount);
+    });
     const netAmount = totalIncome - totalExpense;
     const savingsRate = totalIncome > 0 ? (netAmount / totalIncome) * 100 : 0;
-    const currentPeriodStart = moment(start);
-    const previousPeriodStart = moment(start).subtract(
-      moment(end).diff(moment(start), "days"),
-      "days"
-    );
-    const previousPeriodEnd = moment(start);
-    const [currentPeriodData, previousPeriodData] = await Promise.all([
-      prisma.$queryRaw`
-        SELECT 
-          SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END) as income,
-          SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) as expense
-        FROM transactions 
-        WHERE userId = ${userId} 
-          AND date >= ${start} 
-          AND date <= ${end}
-      `,
-      prisma.$queryRaw`
-        SELECT 
-          SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END) as income,
-          SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END) as expense
-        FROM transactions 
-        WHERE userId = ${userId} 
-          AND date >= ${previousPeriodStart.toDate()} 
-          AND date <= ${previousPeriodEnd.toDate()}
-      `,
-    ]);
-    const currentIncome = parseFloat(currentPeriodData[0]?.income || 0);
-    const currentExpense = parseFloat(currentPeriodData[0]?.expense || 0);
-    const previousIncome = parseFloat(previousPeriodData[0]?.income || 0);
-    const previousExpense = parseFloat(previousPeriodData[0]?.expense || 0);
+    // Trends: compare current period to previous period
+    const periodDays = moment(end).diff(moment(start), "days");
+    const previousStart = moment(start).subtract(periodDays, "days").toDate();
+    const previousEnd = start;
+    const previousTransactions = await prisma.transaction.findMany({
+      where: {
+        userId,
+        date: { gte: previousStart, lte: previousEnd },
+      },
+      select: {
+        amount: true,
+        type: true,
+      },
+    });
+    let previousIncome = 0,
+      previousExpense = 0;
+    previousTransactions.forEach((txn) => {
+      if (txn.type === "INCOME") previousIncome += Number(txn.amount);
+      else if (txn.type === "EXPENSE") previousExpense += Number(txn.amount);
+    });
     const incomeTrend =
       previousIncome > 0
-        ? ((currentIncome - previousIncome) / previousIncome) * 100
+        ? ((totalIncome - previousIncome) / previousIncome) * 100
         : 0;
     const expenseTrend =
       previousExpense > 0
-        ? ((currentExpense - previousExpense) / previousExpense) * 100
+        ? ((totalExpense - previousExpense) / previousExpense) * 100
         : 0;
     const result = {
       summary: {
@@ -218,13 +238,13 @@ export async function getOverviewAnalytics(req, res) {
         totalExpense,
         netAmount,
         savingsRate: Math.round(savingsRate * 100) / 100,
-        totalTransactions: parseInt(summaryData[0]?.totalTransactions || 0),
+        totalTransactions: transactions.length,
       },
       trends: {
         incomeTrend: Math.round(incomeTrend * 100) / 100,
         expenseTrend: Math.round(expenseTrend * 100) / 100,
       },
-      recentTransactions,
+      recentTransactions: transactions.slice(0, 10),
       period: { start: start.toISOString(), end: end.toISOString() },
     };
     await cache.set(
@@ -235,11 +255,9 @@ export async function getOverviewAnalytics(req, res) {
     res.status(200).json({ success: true, data: result });
   } catch (error) {
     console.error("Overview analytics error:", error);
-    res
-      .status(500)
-      .json({
-        error: "Failed to retrieve overview analytics",
-        message: "An error occurred while retrieving overview analytics",
-      });
+    res.status(500).json({
+      error: "Failed to retrieve overview analytics",
+      message: "An error occurred while retrieving overview analytics",
+    });
   }
 }

@@ -1,62 +1,74 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useAuth } from "@/contexts/auth-context"
-import { apiService } from "@/lib/api-service"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Loader2, TrendingUp, TrendingDown, DollarSign, CreditCard, Activity } from "lucide-react"
-import { OverviewChart } from "@/components/overview-chart"
-import { CategoryChart } from "@/components/category-chart"
-import { RecentTransactions } from "@/components/recent-transactions"
+import { useEffect, useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import { apiService } from "@/lib/api-service";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Loader2,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  CreditCard,
+  Activity,
+} from "lucide-react";
+import { OverviewChart } from "@/components/overview-chart";
+import { CategoryChart } from "@/components/category-chart";
+import { RecentTransactions } from "@/components/recent-transactions";
 
 interface OverviewData {
   summary: {
-    totalIncome: number
-    totalExpense: number
-    netAmount: number
-    savingsRate: number
-    totalTransactions: number
-  }
+    totalIncome: number;
+    totalExpense: number;
+    netAmount: number;
+    savingsRate: number;
+    totalTransactions: number;
+  };
   trends: {
-    incomeTrend: number
-    expenseTrend: number
-  }
-  recentTransactions: any[]
+    incomeTrend: number;
+    expenseTrend: number;
+  };
+  recentTransactions: any[];
   period: {
-    start: string
-    end: string
-  }
+    start: string;
+    end: string;
+  };
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth()
-  const [overview, setOverview] = useState<OverviewData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [cached, setCached] = useState(false)
+  const { user } = useAuth();
+  const [overview, setOverview] = useState<OverviewData | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchOverview = async () => {
       try {
-        const response = await apiService.getAnalyticsOverview()
-        setOverview(response.data)
-        setCached(response.cached || false)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setFullYear(endDate.getFullYear() - 3);
+        const startDateStr = startDate.toISOString().slice(0, 10);
+        const endDateStr = endDate.toISOString().slice(0, 10);
+        const response = await apiService.getAnalyticsOverview(
+          startDateStr,
+          endDateStr
+        );
+        setOverview(response.data.data);
       } catch (error) {
-        console.error("Failed to fetch overview:", error)
+        console.error("Failed to fetch overview:", error);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchOverview()
-  }, [])
+    fetchOverview();
+  }, []);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
-    )
+    );
   }
 
   if (!overview) {
@@ -64,10 +76,10 @@ export default function DashboardPage() {
       <div className="text-center py-8">
         <p className="text-muted-foreground">Failed to load dashboard data</p>
       </div>
-    )
+    );
   }
 
-  const { summary, trends } = overview
+  const { summary, trends } = overview;
 
   return (
     <div className="space-y-6">
@@ -76,7 +88,6 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Welcome back, {user?.name}</p>
         </div>
-        {cached && <Badge variant="secondary">Cached Data</Badge>}
       </div>
 
       {/* Summary Cards */}
@@ -87,7 +98,9 @@ export default function DashboardPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">${summary.totalIncome.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-green-600">
+              ${summary.totalIncome.toLocaleString()}
+            </div>
             <div className="flex items-center text-xs text-muted-foreground">
               {trends.incomeTrend > 0 ? (
                 <TrendingUp className="h-3 w-3 mr-1 text-green-500" />
@@ -101,11 +114,15 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Expenses
+            </CardTitle>
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">${summary.totalExpense.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-red-600">
+              ${summary.totalExpense.toLocaleString()}
+            </div>
             <div className="flex items-center text-xs text-muted-foreground">
               {trends.expenseTrend > 0 ? (
                 <TrendingUp className="h-3 w-3 mr-1 text-red-500" />
@@ -123,10 +140,16 @@ export default function DashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${summary.netAmount >= 0 ? "text-green-600" : "text-red-600"}`}>
+            <div
+              className={`text-2xl font-bold ${
+                summary.netAmount >= 0 ? "text-green-600" : "text-red-600"
+              }`}
+            >
               ${summary.netAmount.toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground">Savings Rate: {summary.savingsRate.toFixed(1)}%</p>
+            <p className="text-xs text-muted-foreground">
+              Savings Rate: {Number(summary.savingsRate).toFixed(1)}%
+            </p>
           </CardContent>
         </Card>
 
@@ -136,7 +159,9 @@ export default function DashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.totalTransactions}</div>
+            <div className="text-2xl font-bold">
+              {summary.totalTransactions}
+            </div>
             <p className="text-xs text-muted-foreground">Total transactions</p>
           </CardContent>
         </Card>
@@ -151,5 +176,5 @@ export default function DashboardPage() {
       {/* Recent Transactions */}
       <RecentTransactions transactions={overview.recentTransactions} />
     </div>
-  )
+  );
 }
